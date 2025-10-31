@@ -14,6 +14,7 @@
         target_os = "openbsd",
         target_os = "freebsd",
         target_os = "illumos",
+        target_os = "redox",
     )
 ))]
 mod unix;
@@ -24,6 +25,7 @@ mod unix;
         target_os = "openbsd",
         target_os = "freebsd",
         target_os = "illumos",
+        target_os = "redox",
     )
 ))]
 mod os {
