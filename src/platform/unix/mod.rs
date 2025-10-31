@@ -57,14 +57,14 @@ const RECVMSG_FLAGS: c_int = libc::MSG_CMSG_CLOEXEC;
 #[cfg(not(any(target_os = "linux", target_os = "illumos")))]
 const RECVMSG_FLAGS: c_int = 0;
 
-#[cfg(target_env = "gnu")]
+#[cfg(any(target_env = "gnu", target_os = "redox"))]
 type IovLen = usize;
-#[cfg(target_env = "gnu")]
+#[cfg(any(target_env = "gnu", target_os = "redox"))]
 type MsgControlLen = size_t;
 
-#[cfg(not(target_env = "gnu"))]
+#[cfg(all(not(target_env = "gnu"), not(target_os = "redox")))]
 type IovLen = i32;
-#[cfg(not(target_env = "gnu"))]
+#[cfg(all(not(target_env = "gnu"), not(target_os = "redox")))]
 type MsgControlLen = socklen_t;
 
 unsafe fn new_sockaddr_un(path: *const c_char) -> (sockaddr_un, usize) {
@@ -1111,9 +1111,14 @@ fn new_msghdr(iovec: &mut [iovec], cmsg_buffer: *mut cmsghdr, cmsg_space: MsgCon
 
 fn create_shmem(name: CString, length: usize) -> c_int {
     unsafe {
-        let fd = libc::memfd_create(name.as_ptr(), libc::MFD_CLOEXEC);
+        let flags = libc::O_CREAT | libc::O_RDWR | libc::O_CLOEXEC;
+        let mode = (libc::S_IRUSR | libc::S_IWUSR) as libc::mode_t;
+        let fd = libc::shm_open(name.as_ptr(), flags, mode);
         assert!(fd >= 0);
-        assert_eq!(libc::ftruncate(fd, length as off_t), 0);
+        let unlink_ret = libc::shm_unlink(name.as_ptr());
+        assert_eq!(unlink_ret, 0);
+        let trunc_ret = libc::ftruncate(fd, length as off_t);
+        assert_eq!(trunc_ret, 0);
         fd
     }
 }
@@ -1154,7 +1159,12 @@ impl UnixCmsg {
                 }
             },
             BlockingMode::Timeout(duration) => {
-                let events = libc::POLLIN | libc::POLLPRI | libc::POLLRDHUP;
+                let mut events = libc::POLLIN | libc::POLLPRI;
+
+                #[cfg(not(target_os = "redox"))]
+                {
+                    events |= libc::POLLRDHUP;
+                }
 
                 let mut fd = [libc::pollfd {
                     fd,
